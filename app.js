@@ -6,17 +6,20 @@ var axios = require("axios");
 // const names = {};
 rooms = {
   roomID: {
-    categories: { categories: [], likes: [] },
-    flavours: [],
+    // tags: { tags: [], likes: [] },
+    tags: [],
+    priority: {},
+    // flavours: [],
     budgets: []
   }
 };
+
 //Kinda like the main function
 io.on("connection", async function(socket, test) {
   //Stuff to do once the user starts the session (before joining) (initial stuff)
   console.log("connected", socket.id);
-  const cat = await axios.get("http://127.0.0.1:8000/categories/");
-  const flav = await axios.get("http://127.0.0.1:8000/flavours/");
+  const tag = await axios.get("http://127.0.0.1:8000/tags/");
+  //const flav = await axios.get("http://127.0.0.1:8000/flavours/");
   const res = await axios.get("http://127.0.0.1:8000/restaurants/");
 
   //Stuff to do once the user joins a room
@@ -24,33 +27,40 @@ io.on("connection", async function(socket, test) {
     socket.join(data.id);
 
     io.to(`${socket.id}`).emit("quiz", {
-      categories: cat.data,
-      flavours: flav.data
+      tags: tag.data
     });
   });
   socket.on("quiz_submit", function(data) {
-    const answer = data;
-    // let category = rooms.roomID.categories.find(
-    //   category => category.category == data.category
-    // );
-    data.categories.forEach((cat, inx) => {
-      let category = rooms.roomID.categories.categories.find(ct => {
-        console.log("test", ct, cat);
-        return ct === cat.category;
-      });
-    });
-    // rooms.roomID.categories.categories.push(data);
+    rooms.roomID.budgets.push(data.budget);
 
-    // const filteredRestaurants = res.data.filter(rest => {
-    //   return (
-    //     rest.categories.includes(answer.category) &&
-    //     rest.flavours.includes(answer.flavour) &&
-    //     rest.budget.length <= data.budget
-    //   );
-    // });
+    data.tags.forEach(tag => rooms.roomID.tags.push(tag));
+  });
+
+  socket.on("end", function(data) {
+    // const arrAvg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+    // console.log(arrAvg(rooms.roomID.budgets));
+    let filterList = res.data;
+
+    rooms.roomID.tags.forEach(tag => {
+      if (rooms.roomID.priority[tag]) {
+        rooms.roomID.priority[tag] += 1;
+      } else rooms.roomID.priority[tag] = 1;
+    });
+
+    while (filterList.length > 5 || Object.keys(rooms.roomID.priority).length) {
+      let HighestPriority = Object.keys(rooms.roomID.priority).reduce((a, b) =>
+        rooms.roomID.priority[a] > rooms.roomID.priority[b] ? a : b
+      );
+
+      filterList = filterList.filter(res =>
+        res.tags.includes(parseInt(HighestPriority))
+      );
+      delete rooms.roomID.priority[HighestPriority];
+      console.log(filterList);
+    }
 
     // io.to("2").emit("filtered_rest", {
-    //   filteredRestaurants
+    //   finalFilteredRestaurants
     // });
   });
 
@@ -90,4 +100,24 @@ http.listen(80, function() {
     // console.log("names=>", names);
 
 
+
+     rooms.roomID.tags.sort(function(a, b) {
+      return b.like - a.like;
+    });
+{
+
+
+}
+    console.log(rooms.roomID.tags);
+    for (let i = 0; i <= 4; i++) {
+      if (i >= rooms.roomID.tags.length) {
+        break;
+      }
+      filterList.push(rooms.roomID.tags[i].category);
+    }
+
+   
+
+      return [...fil];
+    });
 */
