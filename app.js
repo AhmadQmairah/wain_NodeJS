@@ -4,15 +4,7 @@ var io = require("socket.io")(http);
 var axios = require("axios");
 
 // const names = {};
-rooms = {
-  roomID: {
-    // tags: { tags: [], likes: [] },
-    tags: [],
-    priority: {},
-    // flavours: [],
-    budgets: []
-  }
-};
+rooms = {};
 
 //Kinda like the main function
 io.on("connection", async function(socket, test) {
@@ -23,49 +15,125 @@ io.on("connection", async function(socket, test) {
   const res = await axios.get("http://127.0.0.1:8000/restaurants/");
 
   //Stuff to do once the user joins a room
+
   socket.on("join", function(data) {
     socket.join(data.id);
 
+    if (!rooms[data.id]) {
+      rooms[data.id] = {
+        tags: [],
+        priority: {},
+        peopleAccepted: 0,
+
+        budgets: []
+      };
+    }
+    console.log(rooms, "ppl are =>", socket.adapter.rooms[data.id].length);
     io.to(`${socket.id}`).emit("quiz", {
       tags: tag.data
     });
+    io.to(data.id).emit("participantsChanged", {
+      participants: socket.adapter.rooms[data.id].length
+    });
   });
+
   socket.on("quiz_submit", function(data) {
-    rooms.roomID.budgets.push(data.budget);
+    console.log(data);
+    rooms[data.id].budgets.push(data.budgets);
 
-    data.tags.forEach(tag => rooms.roomID.tags.push(tag));
+    data.tags.forEach(tag => rooms[data.id].tags.push(tag));
+    rooms[data.id].peopleAccepted += 1;
+    io.to(data.id).emit("participantsSubmitted", {
+      participants: rooms[data.id].peopleAccepted
+    });
+    io.to(data.id).emit("participantsChanged", {
+      participants: socket.adapter.rooms[data.id].length
+    });
+    if (
+      rooms[data.id].peopleAccepted === socket.adapter.rooms[data.id].length
+    ) {
+      finish(data.id);
+    }
   });
 
-  socket.on("end", function(data) {
-    // const arrAvg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
-    // console.log(arrAvg(rooms.roomID.budgets));
+  function finish(id) {
     let filterList = res.data;
 
-    rooms.roomID.tags.forEach(tag => {
-      if (rooms.roomID.priority[tag]) {
-        rooms.roomID.priority[tag] += 1;
-      } else rooms.roomID.priority[tag] = 1;
+    rooms[id].tags.forEach(tag => {
+      if (rooms[id].priority[tag]) {
+        rooms[id].priority[tag] += 1;
+      } else rooms[id].priority[tag] = 1;
     });
 
-    while (filterList.length > 5 || Object.keys(rooms.roomID.priority).length) {
-      let HighestPriority = Object.keys(rooms.roomID.priority).reduce((a, b) =>
-        rooms.roomID.priority[a] > rooms.roomID.priority[b] ? a : b
-      );
-
+    while (filterList.length > 5 && Object.keys(rooms[id].priority).length) {
+      let HighestPriority;
+      console.log(rooms[id].priority);
+      if (Object.keys(rooms[id].priority).length === 1)
+        HighestPriority = Object.keys(rooms[id].priority);
+      else {
+        HighestPriority = Object.keys(rooms[id].priority).reduce((a, b) =>
+          rooms[id].priority[a] > rooms[id].priority[b] ? a : b
+        );
+      }
+      // if (Object.keys(rooms[id].priority).length == 1)
+      const temp = filterList;
       filterList = filterList.filter(res =>
         res.tags.includes(parseInt(HighestPriority))
       );
-      delete rooms.roomID.priority[HighestPriority];
-      console.log(filterList);
+      if (filterList.length == 0) {
+        filterList = temp;
+      }
+
+      delete rooms[id].priority[HighestPriority];
     }
+    if (filterList.length > 0) filterList = filterList.slice(0, 5);
+    console.log(filterList);
 
     // io.to("2").emit("filtered_rest", {
     //   finalFilteredRestaurants
     // });
-  });
+  }
+
+  // socket.on("end", function(data) {
+  //   let filterList = res.data;
+
+  //   rooms.roomID.tags.forEach(tag => {
+  //     if (rooms.roomID.priority[tag]) {
+  //       rooms.roomID.priority[tag] += 1;
+  //     } else rooms.roomID.priority[tag] = 1;
+  //   });
+
+  //   while (filterList.length > 5 && Object.keys(rooms.roomID.priority).length) {
+  //     let HighestPriority;
+  //     console.log(rooms.roomID.priority);
+  //     if (Object.keys(rooms.roomID.priority).length === 1)
+  //       HighestPriority = Object.keys(rooms.roomID.priority);
+  //     else {
+  //       HighestPriority = Object.keys(rooms.roomID.priority).reduce((a, b) =>
+  //         rooms.roomID.priority[a] > rooms.roomID.priority[b] ? a : b
+  //       );
+  //     }
+  //     // if (Object.keys(rooms.roomID.priority).length == 1)
+  //     const temp = filterList;
+  //     filterList = filterList.filter(res =>
+  //       res.tags.includes(parseInt(HighestPriority))
+  //     );
+  //     if (filterList.length == 0) {
+  //       filterList = temp;
+  //     }
+
+  //     delete rooms.roomID.priority[HighestPriority];
+  //   }
+  //   if (filterList.length > 0) filterList = filterList.slice(0, 5);
+  //   console.log(filterList);
+
+  //   // io.to("2").emit("filtered_rest", {
+  //   //   finalFilteredRestaurants
+  //   // });
+  // });
 
   socket.on("disconnect", function() {
-    // console.log("disconnected", socket);
+    console.log("disconnected");
     console.log(Object.keys(socket.adapter.rooms)[0]);
     // delete names[Object.keys(socket.adapter.rooms)[0]][socket.id];
   });
