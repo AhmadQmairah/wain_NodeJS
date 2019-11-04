@@ -10,9 +10,9 @@ rooms = {};
 io.on("connection", async function(socket, test) {
   //Stuff to do once the user starts the session (before joining) (initial stuff)
   console.log("connected", socket.id);
-  const tag = await axios.get("http://127.0.0.1:8000/tags/");
-  //const flav = await axios.get("http://127.0.0.1:8000/flavours/");
-  const res = await axios.get("http://127.0.0.1:8000/restaurants/");
+  const tag = await axios.get("https://5a775714.ngrok.io/tags/");
+
+  const res = await axios.get("https://5a775714.ngrok.io/restaurants/");
 
   //Stuff to do once the user joins a room
 
@@ -20,62 +20,72 @@ io.on("connection", async function(socket, test) {
     socket.join(data.id);
 
     if (!rooms[data.id]) {
+      io.to(`${socket.id}`).emit("admin");
       rooms[data.id] = {
         tags: [],
         priority: {},
         peopleAccepted: 0,
-
+        participants: [],
         budgets: []
       };
     }
-    console.log(rooms, "ppl are =>", socket.adapter.rooms[data.id].length);
+    rooms[data.id].participants.push({ name: data.name, finished: false });
+    console.log(rooms[data.id].participants);
+    //console.log(rooms, "ppl are =>", socket.adapter.rooms[data.id].length);
+    console.log(tag.data);
     io.to(`${socket.id}`).emit("quiz", {
       tags: tag.data
     });
     io.to(data.id).emit("participantsChanged", {
-      participants: socket.adapter.rooms[data.id].length
+      // participants: socket.adapter.rooms[data.id].length
+      participants: rooms[data.id].participants
     });
   });
 
   socket.on("quiz_submit", function(data) {
-    console.log(data);
     rooms[data.id].budgets.push(data.budgets);
 
-    data.tags.forEach(tag => rooms[data.id].tags.push(tag));
+    let user = rooms[data.id].participants.find(
+      user => user.name === data.name
+    );
+    user.finished = true;
+
+    if (data.tags) {
+      data.tags.forEach(tag => rooms[data.id].tags.push(tag));
+    }
     rooms[data.id].peopleAccepted += 1;
     io.to(data.id).emit("participantsSubmitted", {
-      participants: rooms[data.id].peopleAccepted
+      participants: rooms[data.id].participants
     });
     io.to(data.id).emit("participantsChanged", {
-      participants: socket.adapter.rooms[data.id].length
+      // participants: socket.adapter.rooms[data.id].length
+      participants: rooms[data.id].participants
     });
-    if (
-      rooms[data.id].peopleAccepted === socket.adapter.rooms[data.id].length
-    ) {
-      finish(data.id);
-    }
   });
 
-  function finish(id) {
+  socket.on("end", data => {
     let filterList = res.data;
-
-    rooms[id].tags.forEach(tag => {
-      if (rooms[id].priority[tag]) {
-        rooms[id].priority[tag] += 1;
-      } else rooms[id].priority[tag] = 1;
+    console.log("Data:", data);
+    rooms[data.id].tags.forEach(tag => {
+      if (rooms[data.id].priority[tag]) {
+        rooms[data.id].priority[tag] += 1;
+      } else rooms[data.id].priority[tag] = 1;
     });
 
-    while (filterList.length > 5 && Object.keys(rooms[id].priority).length) {
+    while (
+      filterList.length > 5 &&
+      Object.keys(rooms[data.id].priority).length
+    ) {
       let HighestPriority;
-      console.log(rooms[id].priority);
-      if (Object.keys(rooms[id].priority).length === 1)
-        HighestPriority = Object.keys(rooms[id].priority);
+      console.log(rooms[data.id].priority);
+      if (Object.keys(rooms[data.id].priority).length === 1)
+        HighestPriority = Object.keys(rooms[data.id].priority);
       else {
-        HighestPriority = Object.keys(rooms[id].priority).reduce((a, b) =>
-          rooms[id].priority[a] > rooms[id].priority[b] ? a : b
+        HighestPriority = Object.keys(rooms[data.id].priority).reduce((a, b) =>
+          rooms[data.id].priority[a] > rooms[data.id].priority[b] ? a : b
         );
       }
-      // if (Object.keys(rooms[id].priority).length == 1)
+      // if (Object.keys(rooms[data.id].priority).length == 1)
       const temp = filterList;
       filterList = filterList.filter(res =>
         res.tags.includes(parseInt(HighestPriority))
@@ -84,15 +94,14 @@ io.on("connection", async function(socket, test) {
         filterList = temp;
       }
 
-      delete rooms[id].priority[HighestPriority];
+      delete rooms[data.id].priority[HighestPriority];
     }
     if (filterList.length > 0) filterList = filterList.slice(0, 5);
-    console.log(filterList);
 
-    // io.to("2").emit("filtered_rest", {
-    //   finalFilteredRestaurants
-    // });
-  }
+    io.to(data.id).emit("filtered_rest", {
+      filterList
+    });
+  });
 
   // socket.on("end", function(data) {
   //   let filterList = res.data;
