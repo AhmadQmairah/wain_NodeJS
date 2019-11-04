@@ -7,29 +7,35 @@ var axios = require("axios");
 rooms = {};
 
 //Kinda like the main function
+
 io.on("connection", async function(socket, test) {
   //Stuff to do once the user starts the session (before joining) (initial stuff)
   console.log("connected", socket.id);
-  const tag = await axios.get("https://5a775714.ngrok.io/tags/");
-
-  const res = await axios.get("https://5a775714.ngrok.io/restaurants/");
 
   //Stuff to do once the user joins a room
 
-  socket.on("join", function(data) {
-    socket.join(data.id);
+  socket.on("join", async function(data) {
+    const tag = await axios.get("https://e5f11881.ngrok.io/tags/");
 
+    socket.join(data.id);
+    console.log("someone joined");
     if (!rooms[data.id]) {
       io.to(`${socket.id}`).emit("admin");
       rooms[data.id] = {
         tags: [],
         priority: {},
-        peopleAccepted: 0,
+
         participants: [],
-        budgets: []
+        participantsTinder: [],
+        budgets: [],
+        tinderPrioity: []
       };
     }
-    rooms[data.id].participants.push({ name: data.name, finished: false });
+    rooms[data.id].participants.push({
+      name: data.name,
+      finished: false,
+      tinderSubmitted: false
+    });
     console.log(rooms[data.id].participants);
     //console.log(rooms, "ppl are =>", socket.adapter.rooms[data.id].length);
     console.log(tag.data);
@@ -43,7 +49,7 @@ io.on("connection", async function(socket, test) {
   });
 
   socket.on("quiz_submit", function(data) {
-    rooms[data.id].budgets.push(data.budgets);
+    //rooms[data.id].budgets.push(data.budgets);
 
     let user = rooms[data.id].participants.find(
       user => user.name === data.name
@@ -53,7 +59,7 @@ io.on("connection", async function(socket, test) {
     if (data.tags) {
       data.tags.forEach(tag => rooms[data.id].tags.push(tag));
     }
-    rooms[data.id].peopleAccepted += 1;
+
     io.to(data.id).emit("participantsSubmitted", {
       participants: rooms[data.id].participants
     });
@@ -62,10 +68,28 @@ io.on("connection", async function(socket, test) {
       participants: rooms[data.id].participants
     });
   });
+  socket.on("tinder_submit", function(data) {
+    rooms[data.id].tinderPrioity.push(...data.liked);
 
-  socket.on("end", data => {
+    let user = rooms[data.id].participants.find(
+      user => user.name === data.name
+    );
+
+    user.tinderSubmitted = true;
+
+    io.to(data.id).emit("participantsSubmitted", {
+      participants: rooms[data.id].participants
+    });
+    io.to(data.id).emit("participantsChanged", {
+      participants: rooms[data.id].participants
+    });
+    console.log(rooms[data.id].participants);
+  });
+
+  socket.on("end", async data => {
+    const res = await axios.get("https://e5f11881.ngrok.io/restaurants/");
     let filterList = res.data;
-    console.log("Data:", data);
+
     rooms[data.id].tags.forEach(tag => {
       if (rooms[data.id].priority[tag]) {
         rooms[data.id].priority[tag] += 1;
@@ -98,6 +122,7 @@ io.on("connection", async function(socket, test) {
     }
     if (filterList.length > 0) filterList = filterList.slice(0, 5);
 
+    io.to(data.id).emit("start_swipping");
     io.to(data.id).emit("filtered_rest", {
       filterList
     });
@@ -147,6 +172,10 @@ io.on("connection", async function(socket, test) {
     // delete names[Object.keys(socket.adapter.rooms)[0]][socket.id];
   });
 
+  socket.on("endTinder", data => {
+    io.to(data.id).emit("give_result");
+  });
+
   socket.on("category_select", function(data) {
     axios.post(data);
   });
@@ -157,7 +186,7 @@ io.on("connection", async function(socket, test) {
 });
 
 http.listen(80, function() {
-  console.log("Listening on port 30000");
+  console.log("Listening on port 3000");
 });
 
 //REFERENCE
