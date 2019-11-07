@@ -9,18 +9,18 @@ let users = {};
 //Kinda like the main function
 
 io.on("connection", async function(socket, test) {
-  io.set("heartbeat timeout", 2000 / 10);
+  // io.set("heartbeat timeout", 2000 / 10);
   //Stuff to do once the user starts the session (before joining) (initial stuff)
   console.log("connected", socket.id);
   let res;
   //Stuff to do once the user joins a room
 
-  socket.on("join", async function(data) {
-    const tag = await axios.get("https://126fb1df.ngrok.io/tags/");
+  socket.on("join", async function(data = {}) {
+    const tag = await axios.get("http://104.248.34.189/tags/");
 
     socket.join(data.id);
     users[socket.id] = { room: data.id, name: data.name };
-    console.log("someone joined");
+
     if (!rooms[data.id]) {
       io.to(`${socket.id}`).emit("admin");
       rooms[data.id] = {
@@ -29,15 +29,39 @@ io.on("connection", async function(socket, test) {
 
         participants: [],
         budgets: [],
-        submittedRestaurants: []
+        submittedRestaurants: [],
+        FilteredRestaurants: []
       };
     }
-    rooms[data.id].participants.push({
-      name: data.name,
-      finished: false,
-      tinderSubmitted: false
-    });
 
+    if (!data.IsObserver) {
+      if (
+        rooms[data.id].participants.length === 1 &&
+        rooms[data.id].participants[0].IsObserver
+      ) {
+        io.to(`${socket.id}`).emit("admin");
+      }
+      rooms[data.id].participants.push({
+        name: data.name,
+        finished: false,
+        tinderSubmitted: false,
+        IsObserver: false
+      });
+    } else {
+      rooms[data.id].participants.push({
+        name: data.name,
+        finished: true,
+        tinderSubmitted: true,
+        IsObserver: true
+      });
+    }
+
+    if (!data.IsObserver) {
+      io.to(data.id).emit("participantsSubmitted", {
+        participant: data.name,
+        type: "join"
+      });
+    }
     io.to(`${socket.id}`).emit("quiz", {
       tags: tag.data
     });
@@ -57,7 +81,8 @@ io.on("connection", async function(socket, test) {
     }
 
     io.to(data.id).emit("participantsSubmitted", {
-      participants: rooms[data.id].participants
+      participant: data.name,
+      type: "quiz"
     });
     io.to(data.id).emit("participantsChanged", {
       participants: rooms[data.id].participants
@@ -73,7 +98,8 @@ io.on("connection", async function(socket, test) {
     user.tinderSubmitted = true;
 
     io.to(data.id).emit("participantsSubmitted", {
-      participants: rooms[data.id].participants
+      participant: data.name,
+      type: "tinder"
     });
     io.to(data.id).emit("participantsChanged", {
       participants: rooms[data.id].participants
@@ -81,7 +107,7 @@ io.on("connection", async function(socket, test) {
   });
 
   socket.on("end", async data => {
-    res = await axios.get("https://126fb1df.ngrok.io/restaurants/");
+    res = await axios.get("http://104.248.34.189/restaurants/");
     let filterList = res.data;
 
     rooms[data.id].tags.forEach(tag => {
@@ -95,7 +121,7 @@ io.on("connection", async function(socket, test) {
       Object.keys(rooms[data.id].priority).length
     ) {
       let HighestPriority;
-      console.log(rooms[data.id].priority);
+
       if (Object.keys(rooms[data.id].priority).length === 1)
         HighestPriority = Object.keys(rooms[data.id].priority);
       else {
@@ -115,32 +141,38 @@ io.on("connection", async function(socket, test) {
       delete rooms[data.id].priority[HighestPriority];
     }
     if (filterList.length > 0) filterList = filterList.slice(0, 5);
-
-    io.to(data.id).emit("start_swipping");
-    io.to(data.id).emit("filtered_rest", {
-      filterList
-    });
+    if (filterList.length === 1) {
+      io.to(data.id).emit("moveToResult");
+      io.to(data.id).emit("give_result", filterList[0]);
+    } else {
+      rooms[data.id].FilteredRestaurants = filterList;
+      io.to(data.id).emit("start_swipping");
+      io.to(data.id).emit("filtered_rest", {
+        filterList
+      });
+    }
   });
 
   socket.on("disconnect", function() {
     if (users[socket.id]) {
       let room = users[socket.id].room;
       let name = users[socket.id].name;
-      console.log(name, "disconnected from room", room);
-      console.log("before", rooms[room].participants);
+
       rooms[room].participants = rooms[room].participants.filter(
         user => user.name !== name
       );
-
-      io.to(room).emit("participantsChanged", {
-        participants: rooms[room].participants
-      });
-
-      console.log("after", rooms[room].participants);
+      if (!rooms[room].participants.length) {
+        delete rooms[room];
+      } else {
+        io.to(room).emit("participantsChanged", {
+          participants: rooms[room].participants
+        });
+      }
     }
   });
 
   socket.on("endTinder", data => {
+    console.log(rooms[data.id], "Also in the news", data);
     let index;
     let x = rooms[data.id].submittedRestaurants;
     let selectedRestaurant;
@@ -160,28 +192,26 @@ io.on("connection", async function(socket, test) {
       ...Object.keys(priorityPerRepetition).map(key => parseInt(key))
     );
 
-    const listToRandomize = priorityPerRepetition[highestKey];
+    let listToRandomize = priorityPerRepetition[highestKey];
     console.log("list to random", listToRandomize);
-    if (listToRandomize.length == 1)
+    if (!listToRandomize) {
+      listToRandomize = rooms[data.id].FilteredRestaurants;
+      index = Math.floor(Math.random() * (listToRandomize.length - 1));
+      selectedRestaurant = res.data.find(
+        r => r.id == listToRandomize[index].id
+      );
+    } else if (listToRandomize.length == 1)
       selectedRestaurant = res.data.find(r => r.id == listToRandomize[0]);
     else {
       index = Math.floor(Math.random() * (listToRandomize.length - 1));
       selectedRestaurant = res.data.find(r => r.id == listToRandomize[index]);
     }
-    console.log("twtk", selectedRestaurant, "Index", index);
+
     io.to(data.id).emit("moveToResult");
     io.to(data.id).emit("give_result", selectedRestaurant);
   });
-
-  socket.on("category_select", function(data) {
-    axios.post(data);
-  });
-
-  socket.on("hi", function(data) {
-    io.in("2").emit("hi");
-  });
 });
-
+//delete rooms[data.id];
 http.listen(80, function() {
   console.log("Listening on port 3000");
 });
