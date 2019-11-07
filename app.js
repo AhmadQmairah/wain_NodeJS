@@ -7,7 +7,9 @@ var axios = require("axios");
 let rooms = {};
 let users = {};
 //Kinda like the main function
-
+app.get("/", (req, res) => {
+  res.send("yo");
+});
 io.on("connection", async function(socket, test) {
   // io.set("heartbeat timeout", 2000 / 10);
   //Stuff to do once the user starts the session (before joining) (initial stuff)
